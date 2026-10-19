@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Tuxedo</title>
+
+<style>
+body{
+  font-family:-apple-system,BlinkMacSystemFont,sans-serif;
+  background:#111827;
+  color:white;
+  max-width:700px;
+  margin:auto;
+  padding:20px;
+}
+
+.card{
+  background:#1f2937;
+  padding:15px;
+  border-radius:15px;
+  margin-bottom:15px;
+}
+
+h1{
+  text-align:center;
+}
+
+button{
+  width:100%;
+  padding:12px;
+  border:none;
+  border-radius:10px;
+  background:#3b82f6;
+  color:white;
+  font-weight:bold;
+}
+
+input{
+  width:100%;
+  padding:10px;
+  margin-top:8px;
+  margin-bottom:8px;
+  border-radius:10px;
+  border:none;
+}
+
+.quest{
+  margin:8px 0;
+}
+</style>
+</head>
+<body>
+
+<h1>👔 Project Tuxedo</h1>
+
+<div class="card">
+  <h2>Opsætning</h2>
+
+  <input id="startWeight" placeholder="Startvægt">
+  <input id="goalWeight" placeholder="Målvægt">
+
+  <button onclick="saveSettings()">Gem opsætning</button>
+</div>
+
+<div class="card">
+  <h2>Dagens Quest</h2>
+
+  <div class="quest"><input type="checkbox" id="meal1"> Måltid 1</div>
+  <div class="quest"><input type="checkbox" id="meal2"> Måltid 2</div>
+  <div class="quest"><input type="checkbox" id="water"> 3L vand</div>
+  <div class="quest"><input type="checkbox" id="steps"> 20.000 skridt</div>
+  <div class="quest"><input type="checkbox" id="training"> Træning</div>
+
+  <input id="todayWeight" placeholder="Dagens vægt">
+
+  <button onclick="saveDay()">Gem dag</button>
+</div>
+
+<div class="card">
+  <h2>Status</h2>
+
+  <p id="status"></p>
+</div>
+
+<script>
+
+function saveSettings(){
+  localStorage.setItem("startWeight",
+    document.getElementById("startWeight").value);
+
+  localStorage.setItem("goalWeight",
+    document.getElementById("goalWeight").value);
+
+  update();
+}
+
+function saveDay(){
+
+  const entry = {
+    date: new Date().toLocaleDateString("da-DK"),
+    weight: document.getElementById("todayWeight").value,
+    tasks: [
+      document.getElementById("meal1").checked,
+      document.getElementById("meal2").checked,
+      document.getElementById("water").checked,
+      document.getElementById("steps").checked,
+      document.getElementById("training").checked
+    ]
+  };
+
+  let history =
+    JSON.parse(localStorage.getItem("history") || "[]");
+
+  history.push(entry);
+
+  localStorage.setItem(
+    "history",
+    JSON.stringify(history)
+  );
+
+  update();
+}
+
+function update(){
+
+  const start =
+    parseFloat(localStorage.getItem("startWeight")) || 132.7;
+
+  const goal =
+    parseFloat(localStorage.getItem("goalWeight")) || 95;
+
+  const history =
+    JSON.parse(localStorage.getItem("history") || "[]");
+
+  let current = start;
+
+  if(history.length > 0){
+    current =
+      parseFloat(history[history.length-1].weight);
+  }
+
+  document.getElementById("status").innerHTML =
+    `
+    Startvægt: ${start} kg<br>
+    Nuværende vægt: ${current} kg<br>
+    Tabt: ${(start-current).toFixed(1)} kg<br>
+    Tilbage til mål: ${(current-goal).toFixed(1)} kg
+    `;
+}
+
+update();
+
+</script>
+
+</body>
+</html>
