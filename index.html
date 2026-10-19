@@ -4,218 +4,213 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Project Tuxedo</title>
-
 <style>
-body{
-  font-family:-apple-system,BlinkMacSystemFont,sans-serif;
-  background:#111827;
-  color:white;
-  max-width:700px;
-  margin:auto;
-  padding:20px;
-}
-
-.card{
-  background:#1f2937;
-  padding:15px;
-  border-radius:15px;
-  margin-bottom:15px;
-}
-
-h1{
-  text-align:center;
-}
-
-button{
-  width:100%;
-  padding:12px;
-  border:none;
-  border-radius:10px;
-  background:#3b82f6;
-  color:white;
-  font-weight:bold;
-}
-
-input{
-  width:100%;
-  padding:10px;
-  margin-top:8px;
-  margin-bottom:8px;
-  border-radius:10px;
-  border:none;
-}
-
-.quest{
-  margin:8px 0;
-}
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#111827;color:#fff;max-width:700px;margin:auto;padding:20px;line-height:1.5}
+  h1{text-align:center}
+  h2{margin-top:0}
+  .card{background:#1f2937;padding:16px;border-radius:15px;margin-bottom:15px}
+  button{width:100%;padding:12px;border:none;border-radius:10px;background:#3b82f6;color:#fff;font-weight:bold;font-size:16px;cursor:pointer}
+  button:active{background:#2563eb}
+  input[type=text],input[type=number]{width:100%;padding:10px;margin:8px 0;border-radius:10px;border:none;font-size:16px}
+  .quest{margin:10px 0;display:flex;align-items:center;gap:10px}
+  .quest input{width:20px;height:20px}
+  .msg{margin:10px 0 0;font-size:14px;color:#86efac;min-height:1.2em}
+  .msg.err{color:#fca5a5}
+  .warn{background:#7f1d1d;padding:10px;border-radius:10px;margin-bottom:15px;display:none}
+  .hist{padding:8px 0;border-bottom:1px solid #374151}
+  .hist:last-child{border-bottom:none}
+  .bar{height:10px;background:#374151;border-radius:5px;overflow:hidden;margin-top:10px}
+  .bar div{height:100%;background:#3b82f6;width:0}
 </style>
 </head>
 <body>
 
 <h1>👔 Project Tuxedo</h1>
 
+<div id="warn" class="warn">
+  Din browser tillader ikke at gemme data her (fx privat tilstand eller en forhåndsvisning).
+  Åbn siden i en almindelig browser-fane, ellers forsvinder alt ved genindlæsning.
+</div>
+
 <div class="card">
   <h2>Opsætning</h2>
-
-  <input id="startWeight" placeholder="Startvægt">
-  <input id="goalWeight" placeholder="Målvægt">
-
+  <input id="startWeight" type="text" inputmode="decimal" placeholder="Startvægt (kg)">
+  <input id="goalWeight" type="text" inputmode="decimal" placeholder="Målvægt (kg)">
   <button onclick="saveSettings()">Gem opsætning</button>
+  <p id="settingsMsg" class="msg"></p>
 </div>
 
 <div class="card">
   <h2>Dagens Quest</h2>
-
-  <div class="quest"><input type="checkbox" id="meal1"> Måltid 1</div>
-  <div class="quest"><input type="checkbox" id="meal2"> Måltid 2</div>
-  <div class="quest"><input type="checkbox" id="water"> 3L vand</div>
-  <div class="quest"><input type="checkbox" id="steps"> 20.000 skridt</div>
-  <div class="quest"><input type="checkbox" id="training"> Træning</div>
-
-  <input id="todayWeight" placeholder="Dagens vægt">
-
+  <div class="quest"><input type="checkbox" id="meal1"><label for="meal1">Måltid 1</label></div>
+  <div class="quest"><input type="checkbox" id="meal2"><label for="meal2">Måltid 2</label></div>
+  <div class="quest"><input type="checkbox" id="water"><label for="water">3L vand</label></div>
+  <div class="quest"><input type="checkbox" id="steps"><label for="steps">20.000 skridt</label></div>
+  <div class="quest"><input type="checkbox" id="training"><label for="training">Træning</label></div>
+  <input id="todayWeight" type="text" inputmode="decimal" placeholder="Dagens vægt (kg)">
   <button onclick="saveDay()">Gem dag</button>
+  <p id="dayMsg" class="msg"></p>
 </div>
-  
+
 <div class="card">
   <h2>⏳ Tuxedo Countdown</h2>
   <p id="countdown"></p>
 </div>
-  
+
 <div class="card">
   <h2>Status</h2>
-
   <p id="status"></p>
+  <div class="bar"><div id="progress"></div></div>
 </div>
-  
+
 <div class="card">
   <h2>📖 Historik</h2>
   <div id="historyList"></div>
 </div>
-  
-  <div class="card">
+
+<div class="card">
   <h2>🏆 Milepæle</h2>
   <div id="milestones"></div>
 </div>
-  
+
 <script>
+const TUX_DATE = new Date(2027, 3, 1);           // 1. april 2027 (måned 3 = april)
+const MILESTONES = [130, 125, 120, 115, 110, 105, 100, 95];
+const $ = id => document.getElementById(id);
 
-function saveSettings(){
-  localStorage.setItem("startWeight",
-    document.getElementById("startWeight").value);
-
-  localStorage.setItem("goalWeight",
-    document.getElementById("goalWeight").value);
-
-  update();
+/* ---------- Sikker lagring (virker også hvis localStorage er blokeret) ---------- */
+const memory = {};
+let canStore = true;
+try {
+  localStorage.setItem("__test", "1");
+  localStorage.removeItem("__test");
+} catch (e) {
+  canStore = false;
+  $("warn").style.display = "block";
 }
-
-function saveDay(){
-
-  const entry = {
-    date: new Date().toLocaleDateString("da-DK"),
-    weight: document.getElementById("todayWeight").value,
-    tasks: [
-      document.getElementById("meal1").checked,
-      document.getElementById("meal2").checked,
-      document.getElementById("water").checked,
-      document.getElementById("steps").checked,
-      document.getElementById("training").checked
-    ]
-  };
-
-  let history =
-    JSON.parse(localStorage.getItem("history") || "[]");
-
-  history.push(entry);
-
-  localStorage.setItem(
-    "history",
-    JSON.stringify(history)
-  );
-
-  update();
-}
-
-function update() {
-
-  const start =
-    parseFloat(localStorage.getItem("startWeight")) || 132.7;
-
-  const goal =
-    parseFloat(localStorage.getItem("goalWeight")) || 95;
-
-  const history =
-    JSON.parse(localStorage.getItem("history") || "[]");
-
-  let current = start;
-
-  if (history.length > 0) {
-    current =
-      parseFloat(history[history.length - 1].weight);
+function store(key, value) {
+  const text = JSON.stringify(value);
+  if (canStore) {
+    try { localStorage.setItem(key, text); return true; } catch (e) { canStore = false; }
   }
+  memory[key] = text;
+  $("warn").style.display = "block";
+  return false;
+}
+function load(key, fallback) {
+  try {
+    const text = canStore ? localStorage.getItem(key) : memory[key];
+    return text ? JSON.parse(text) : fallback;
+  } catch (e) { return fallback; }
+}
 
-  document.getElementById("status").innerHTML =
-  `
-  Startvægt: ${start} kg<br>
-  Nuværende vægt: ${current} kg<br>
-  Tabt: ${(start - current).toFixed(1)} kg<br>
-  Tilbage til mål: ${(current - goal).toFixed(1)} kg
-  `;
+/* ---------- Hjælpere ---------- */
+// Accepterer både 132,7 og 132.7
+function toNumber(text) {
+  const n = parseFloat(String(text).trim().replace(",", "."));
+  return isFinite(n) ? n : null;
+}
+function fmt(n) { return n.toFixed(1).replace(".", ","); }
+function todayKey() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+function say(id, text, isError) {
+  const el = $(id);
+  el.textContent = text;
+  el.className = "msg" + (isError ? " err" : "");
+}
 
-  // Countdown til 1. april 2027
-  const tuxDate = new Date("2027-04-01");
+/* ---------- Gem ---------- */
+function saveSettings() {
+  const start = toNumber($("startWeight").value);
+  const goal = toNumber($("goalWeight").value);
+  if (start === null || goal === null || start <= 0 || goal <= 0) {
+    say("settingsMsg", "Skriv både start- og målvægt som tal, fx 132,7", true);
+    return;
+  }
+  const ok = store("settings", { start, goal });
+  say("settingsMsg", ok ? "Opsætning gemt ✔" : "Kunne ikke gemme permanent", !ok);
+  render();
+}
+
+function saveDay() {
+  const weight = toNumber($("todayWeight").value);
+  if (weight === null || weight <= 0) {
+    say("dayMsg", "Skriv dagens vægt som tal, fx 131,4", true);
+    return;
+  }
+  const entry = {
+    key: todayKey(),
+    date: new Date().toLocaleDateString("da-DK"),
+    weight,
+    tasks: ["meal1", "meal2", "water", "steps", "training"].map(id => $(id).checked)
+  };
+  // Kun én post pr. dag – gem igen overskriver i dag
+  const history = load("history", []).filter(h => h.key !== entry.key);
+  history.push(entry);
+  history.sort((a, b) => a.key.localeCompare(b.key));
+  const ok = store("history", history);
+  say("dayMsg", ok ? "Dag gemt ✔" : "Kunne ikke gemme permanent", !ok);
+  render();
+}
+
+/* ---------- Vis ---------- */
+function restoreForm() {
+  const s = load("settings", null);
+  if (s) {
+    $("startWeight").value = String(s.start).replace(".", ",");
+    $("goalWeight").value = String(s.goal).replace(".", ",");
+  }
+  const today = load("history", []).find(h => h.key === todayKey());
+  if (today) {
+    $("todayWeight").value = String(today.weight).replace(".", ",");
+    ["meal1", "meal2", "water", "steps", "training"].forEach((id, i) => $(id).checked = today.tasks[i]);
+  }
+}
+
+function render() {
+  const settings = load("settings", { start: 132.7, goal: 95 });
+  const history = load("history", []);
+  const start = settings.start, goal = settings.goal;
+  const current = history.length ? history[history.length - 1].weight : start;
+
+  // Countdown
   const now = new Date();
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const days = Math.round((TUX_DATE - midnight) / 86400000);
+  $("countdown").textContent = days > 0 ? days + " dage tilbage" : days === 0 ? "Det er i dag! 🎉" : "Datoen er passeret";
 
-  const diff =
-    Math.ceil((tuxDate - now) / (1000 * 60 * 60 * 24));
+  // Status
+  $("status").innerHTML =
+    "Startvægt: " + fmt(start) + " kg<br>" +
+    "Nuværende vægt: " + fmt(current) + " kg<br>" +
+    "Tabt: " + fmt(start - current) + " kg<br>" +
+    "Tilbage til mål: " + fmt(Math.max(0, current - goal)) + " kg";
+  const total = start - goal;
+  const pct = total > 0 ? Math.min(100, Math.max(0, (start - current) / total * 100)) : 0;
+  $("progress").style.width = pct + "%";
 
-  document.getElementById("countdown").innerText =
-    diff + " dage tilbage";
-
-  // Historik
-  let historyHtml = "";
-
+  // Historik (nyeste først)
+  const list = $("historyList");
+  list.innerHTML = "";
+  if (!history.length) list.textContent = "Ingen dage gemt endnu.";
   history.slice().reverse().forEach(h => {
-
-    const completed =
-      h.tasks.filter(x => x).length;
-
-    historyHtml += `
-      <p>
-        ${h.date}<br>
-        ${h.weight} kg<br>
-        ${completed}/5 quests
-      </p>
-      <hr>
-    `;
+    const div = document.createElement("div");
+    div.className = "hist";
+    div.textContent = h.date + " – " + fmt(h.weight) + " kg – " + h.tasks.filter(Boolean).length + "/5 quests";
+    list.appendChild(div);
   });
-
-  document.getElementById("historyList").innerHTML =
-    historyHtml;
 
   // Milepæle
-  const goals =
-    [130, 125, 120, 115, 110, 105, 100, 95];
-
-  let goalHtml = "";
-
-  goals.forEach(g => {
-
-    if (current <= g) {
-      goalHtml += `✅ ${g} kg<br>`;
-    } else {
-      goalHtml += `⬜ ${g} kg<br>`;
-    }
-
-  });
-
-  document.getElementById("milestones").innerHTML =
-    goalHtml;
+  $("milestones").innerHTML = MILESTONES
+    .map(g => (current <= g ? "✅ " : "⬜ ") + g + " kg")
+    .join("<br>");
 }
 
-update();
-
+restoreForm();
+render();
 </script>
 
 </body>
