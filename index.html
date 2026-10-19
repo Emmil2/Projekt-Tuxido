@@ -76,13 +76,28 @@ input{
 
   <button onclick="saveDay()">Gem dag</button>
 </div>
-
+  
+<div class="card">
+  <h2>⏳ Tuxedo Countdown</h2>
+  <p id="countdown"></p>
+</div>
+  
 <div class="card">
   <h2>Status</h2>
 
   <p id="status"></p>
 </div>
-
+  
+<div class="card">
+  <h2>📖 Historik</h2>
+  <div id="historyList"></div>
+</div>
+  
+  <div class="card">
+  <h2>🏆 Milepæle</h2>
+  <div id="milestones"></div>
+</div>
+  
 <script>
 
 function saveSettings(){
@@ -122,7 +137,7 @@ function saveDay(){
   update();
 }
 
-function update(){
+function update() {
 
   const start =
     parseFloat(localStorage.getItem("startWeight")) || 132.7;
@@ -135,18 +150,68 @@ function update(){
 
   let current = start;
 
-  if(history.length > 0){
+  if (history.length > 0) {
     current =
-      parseFloat(history[history.length-1].weight);
+      parseFloat(history[history.length - 1].weight);
   }
 
   document.getElementById("status").innerHTML =
-    `
-    Startvægt: ${start} kg<br>
-    Nuværende vægt: ${current} kg<br>
-    Tabt: ${(start-current).toFixed(1)} kg<br>
-    Tilbage til mål: ${(current-goal).toFixed(1)} kg
+  `
+  Startvægt: ${start} kg<br>
+  Nuværende vægt: ${current} kg<br>
+  Tabt: ${(start - current).toFixed(1)} kg<br>
+  Tilbage til mål: ${(current - goal).toFixed(1)} kg
+  `;
+
+  // Countdown til 1. april 2027
+  const tuxDate = new Date("2027-04-01");
+  const now = new Date();
+
+  const diff =
+    Math.ceil((tuxDate - now) / (1000 * 60 * 60 * 24));
+
+  document.getElementById("countdown").innerText =
+    diff + " dage tilbage";
+
+  // Historik
+  let historyHtml = "";
+
+  history.slice().reverse().forEach(h => {
+
+    const completed =
+      h.tasks.filter(x => x).length;
+
+    historyHtml += `
+      <p>
+        ${h.date}<br>
+        ${h.weight} kg<br>
+        ${completed}/5 quests
+      </p>
+      <hr>
     `;
+  });
+
+  document.getElementById("historyList").innerHTML =
+    historyHtml;
+
+  // Milepæle
+  const goals =
+    [130, 125, 120, 115, 110, 105, 100, 95];
+
+  let goalHtml = "";
+
+  goals.forEach(g => {
+
+    if (current <= g) {
+      goalHtml += `✅ ${g} kg<br>`;
+    } else {
+      goalHtml += `⬜ ${g} kg<br>`;
+    }
+
+  });
+
+  document.getElementById("milestones").innerHTML =
+    goalHtml;
 }
 
 update();
