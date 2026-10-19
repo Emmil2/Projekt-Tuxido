@@ -7,7 +7,8 @@
 <style>
   *{box-sizing:border-box}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#111827;color:#fff;max-width:700px;margin:auto;padding:20px;line-height:1.5}
-  h1{text-align:center}
+  h1{text-align:center;margin-bottom:4px}
+  .ver{text-align:center;color:#9ca3af;font-size:13px;margin:0 0 20px}
   h2{margin-top:0}
   .card{background:#1f2937;padding:16px;border-radius:15px;margin-bottom:15px}
   button{width:100%;padding:12px;border:none;border-radius:10px;background:#3b82f6;color:#fff;font-weight:bold;font-size:16px;cursor:pointer}
@@ -22,12 +23,24 @@
   .hist:last-child{border-bottom:none}
   .bar{height:25px;background:#374151;border-radius:10px;overflow:hidden}
   .bar div{height:100%;width:0;background:#22c55e;transition:width .4s}
+  .bar.thin{height:12px}
+  .bar.thin div{background:#3b82f6}
   .big{font-size:28px;font-weight:bold;margin:0}
+  .muted{color:#9ca3af;font-size:14px;margin:4px 0 0}
+  .score{display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 6px}
+  .score b{font-size:22px}
+  .bar.score-bar{height:12px;margin-bottom:14px}
+  .bar.score-bar div{background:#f59e0b}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .stat{background:#111827;border-radius:10px;padding:10px}
+  .stat b{display:block;font-size:20px}
+  svg{width:100%;height:auto;display:block}
 </style>
 </head>
 <body>
 
 <h1>👔 Project Tuxedo</h1>
+<p class="ver">V5</p>
 
 <div id="warn" class="warn">
   Din browser tillader ikke at gemme data her (fx privat tilstand eller en forhåndsvisning).
@@ -52,6 +65,10 @@
   <input id="todayWeight" type="text" inputmode="decimal" placeholder="Dagens vægt (kg)">
   <button onclick="saveDay()">Gem dag</button>
   <p id="dayMsg" class="msg"></p>
+
+  <div class="score"><span>Dagens score</span><b id="scoreText">0 / 5</b></div>
+  <div class="bar score-bar"><div id="scoreBar"></div></div>
+  <span id="scorePct" class="muted"></span>
 </div>
 
 <div class="card">
@@ -73,16 +90,32 @@
 <div class="card">
   <h2>🔥 Streak</h2>
   <p id="streak" class="big"></p>
+  <p id="record" class="muted"></p>
 </div>
 
 <div class="card">
   <h2>👑 Final Boss</h2>
   <p id="boss"></p>
+  <div id="nextBlock">
+    <p id="nextGoal" class="muted"></p>
+    <div class="bar thin"><div id="nextBar"></div></div>
+    <p id="nextText" class="muted"></p>
+  </div>
 </div>
 
 <div class="card">
   <h2>🏆 Milepæle</h2>
   <div id="milestones"></div>
+</div>
+
+<div class="card">
+  <h2>📈 Vægtgraf</h2>
+  <div id="chart"></div>
+</div>
+
+<div class="card">
+  <h2>📊 Ugestatistik</h2>
+  <div id="weekly" class="grid"></div>
 </div>
 
 <div class="card">
@@ -92,6 +125,7 @@
 
 <script>
 const TUX_DATE = new Date(2027, 3, 1);           // 1. april 2027
+const DEFAULTS = { start: 132.8, goal: 95 };
 const MILESTONES = [130, 125, 120, 115, 110, 105, 100, 95];
 const TASK_IDS = ["meal1", "meal2", "water", "steps", "training"];
 const QUEST_NAMES = {
@@ -132,21 +166,26 @@ function toNumber(text) {                       // accepterer 132,7 og 132.7
   return isFinite(n) ? n : null;
 }
 function fmt(n) { return n.toFixed(1).replace(".", ","); }
+function fmtGoal(n) { return fmt(n).replace(",0", ""); }
 function dateKey(d) {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 function todayKey() { return dateKey(new Date()); }
+function keyToDate(k) { const p = k.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+function dayDiff(a, b) { return Math.round((keyToDate(b) - keyToDate(a)) / 86400000); }
+function shortDate(k) { const d = keyToDate(k); return d.getDate() + "/" + (d.getMonth() + 1); }
 function say(id, text, isError) {
   $(id).textContent = text;
   $(id).className = "msg" + (isError ? " err" : "");
 }
+function isPerfect(h) { return h.tasks.filter(Boolean).length >= 5; }
 
 /* ---------- Gem ---------- */
 function saveSettings() {
   const start = toNumber($("startWeight").value);
   const goal = toNumber($("goalWeight").value);
   if (start === null || goal === null || start <= 0 || goal <= 0) {
-    say("settingsMsg", "Skriv både start- og målvægt som tal, fx 132,7", true);
+    say("settingsMsg", "Skriv både start- og målvægt som tal, fx 132,8", true);
     return;
   }
   const ok = store("settings", { start, goal });
@@ -174,45 +213,114 @@ function saveDay() {
   render();
 }
 
-/* ---------- Vis ---------- */
+/* ---------- Formular ---------- */
 function restoreForm() {
-  const s = load("settings", null);
-  if (s) {
-    $("startWeight").value = String(s.start).replace(".", ",");
-    $("goalWeight").value = String(s.goal).replace(".", ",");
-  }
+  const s = load("settings", DEFAULTS);                 // autofyld med standardværdier
+  $("startWeight").value = String(s.start).replace(".", ",");
+  $("goalWeight").value = String(s.goal).replace(".", ",");
   const today = load("history", []).find(h => h.key === todayKey());
   if (today) {
     $("todayWeight").value = String(today.weight).replace(".", ",");
     TASK_IDS.forEach((id, i) => $(id).checked = today.tasks[i]);
   }
+  updateScore();
 }
 
-// Antal dage i træk med 5/5 quests. Hvis i dag ikke er færdig endnu, tælles fra i går.
-function calcStreak(history) {
+function updateScore() {
+  const n = TASK_IDS.filter(id => $(id).checked).length;
+  const pct = Math.round(n / TASK_IDS.length * 100);
+  $("scoreText").textContent = n + " / " + TASK_IDS.length;
+  $("scoreBar").style.width = pct + "%";
+  $("scorePct").textContent = pct + "%" + (n === TASK_IDS.length ? " – perfekt dag 🎉" : "");
+}
+TASK_IDS.forEach(id => $(id).addEventListener("change", updateScore));
+
+/* ---------- Streaks ---------- */
+function currentStreak(history) {
   const byKey = {};
   history.forEach(h => byKey[h.key] = h);
-  const done = d => {
-    const h = byKey[dateKey(d)];
-    return h && h.tasks.filter(Boolean).length >= 5;
-  };
+  const done = d => byKey[dateKey(d)] && isPerfect(byKey[dateKey(d)]);
   const d = new Date();
   if (!done(d)) d.setDate(d.getDate() - 1);
-  let streak = 0;
-  while (done(d)) {
-    streak++;
-    d.setDate(d.getDate() - 1);
-  }
-  return streak;
+  let n = 0;
+  while (done(d)) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+function longestStreak(history) {
+  let best = 0, run = 0, prev = null;
+  history.forEach(h => {
+    if (!isPerfect(h)) { run = 0; prev = null; return; }
+    run = (prev && dayDiff(prev, h.key) === 1) ? run + 1 : 1;
+    prev = h.key;
+    best = Math.max(best, run);
+  });
+  return best;
 }
 
+/* ---------- Graf ---------- */
+function drawChart(history, goal) {
+  const box = $("chart");
+  if (history.length < 2) {
+    box.innerHTML = '<p class="muted">Grafen vises, når du har gemt mindst 2 dage.</p>';
+    return;
+  }
+  const W = 600, H = 260, L = 46, R = 16, T = 16, B = 34;
+  const ws = history.map(h => h.weight);
+  let min = Math.min(...ws), max = Math.max(...ws);
+  if (max - min < 1) { min -= 0.5; max += 0.5; }
+  const pad = (max - min) * 0.1;
+  min -= pad; max += pad;
+  const x = i => L + (history.length === 1 ? 0 : i / (history.length - 1)) * (W - L - R);
+  const y = w => T + (max - w) / (max - min) * (H - T - B);
+
+  const pts = history.map((h, i) => x(i).toFixed(1) + "," + y(h.weight).toFixed(1));
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Vægt over tid">';
+  [max, (max + min) / 2, min].forEach(v => {
+    svg += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="#374151"/>';
+    svg += '<text x="' + (L - 6) + '" y="' + (y(v) + 4) + '" fill="#9ca3af" font-size="12" text-anchor="end">' + fmt(v) + '</text>';
+  });
+  if (goal >= min && goal <= max) {
+    svg += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(goal) + '" y2="' + y(goal) + '" stroke="#22c55e" stroke-dasharray="6 4"/>';
+  }
+  svg += '<polyline points="' + pts.join(" ") + '" fill="none" stroke="#3b82f6" stroke-width="3" stroke-linejoin="round"/>';
+  history.forEach((h, i) => {
+    svg += '<circle cx="' + x(i) + '" cy="' + y(h.weight) + '" r="4" fill="#3b82f6"/>';
+  });
+  const last = history[history.length - 1];
+  svg += '<text x="' + x(history.length - 1) + '" y="' + (y(last.weight) - 10) + '" fill="#fff" font-size="13" font-weight="bold" text-anchor="end">' + fmt(last.weight) + ' kg</text>';
+  svg += '<text x="' + L + '" y="' + (H - 10) + '" fill="#9ca3af" font-size="12">' + shortDate(history[0].key) + '</text>';
+  svg += '<text x="' + (W - R) + '" y="' + (H - 10) + '" fill="#9ca3af" font-size="12" text-anchor="end">' + shortDate(last.key) + '</text>';
+  svg += '</svg>';
+  box.innerHTML = svg;
+}
+
+/* ---------- Ugestatistik ---------- */
+function drawWeekly(history) {
+  const today = todayKey();
+  const week = history.filter(h => { const d = dayDiff(h.key, today); return d >= 0 && d <= 6; });
+  const perfect = week.filter(isPerfect).length;
+  const quests = week.reduce((s, h) => s + h.tasks.filter(Boolean).length, 0);
+  const avg = week.length ? quests / week.length : 0;
+  let change = "–";
+  if (week.length >= 2) {
+    const c = week[week.length - 1].weight - week[0].weight;
+    change = (c > 0 ? "+" : "") + fmt(c) + " kg";
+  }
+  const stat = (label, value) => '<div class="stat"><b>' + value + '</b><span class="muted">' + label + '</span></div>';
+  $("weekly").innerHTML =
+    stat("Dage gemt (7 dage)", week.length + " / 7") +
+    stat("Perfekte dage", perfect) +
+    stat("Gns. quests pr. dag", week.length ? avg.toFixed(1).replace(".", ",") + " / 5" : "–") +
+    stat("Vægtændring", change);
+}
+
+/* ---------- Render ---------- */
 function render() {
-  const settings = load("settings", { start: 132.7, goal: 95 });
+  const settings = load("settings", DEFAULTS);
   const history = load("history", []);
   const start = settings.start, goal = settings.goal;
   const current = history.length ? history[history.length - 1].weight : start;
 
-  // Dagens quest-navn
   $("questTitle").textContent = QUEST_NAMES[new Date().getDay()];
 
   // Countdown
@@ -228,27 +336,49 @@ function render() {
     "Tabt: " + fmt(start - current) + " kg<br>" +
     "Tilbage til mål: " + fmt(Math.max(0, current - goal)) + " kg";
 
-  // Progress
+  // Progress mod mål
   const total = start - goal;
   const pct = total > 0 ? Math.min(100, Math.max(0, (start - current) / total * 100)) : 0;
-  $("progressTitle").textContent = "📊 Progress mod " + fmt(goal).replace(",0", "") + " kg";
+  $("progressTitle").textContent = "📊 Progress mod " + fmtGoal(goal) + " kg";
   $("progressBar").style.width = pct + "%";
   $("progressText").textContent = pct.toFixed(1).replace(".", ",") + "% gennemført";
 
-  // Streak
-  const streak = calcStreak(history);
-  $("streak").textContent = streak + (streak === 1 ? " dag" : " dage");
+  // Streak (farvekodet)
+  const streak = currentStreak(history);
+  let icon = "🔥", color = "#ffffff";
+  if (streak >= 30) { icon = "🏆"; color = "#fbbf24"; }
+  else if (streak >= 7) { icon = "🟢"; color = "#22c55e"; }
+  else if (streak >= 1) { icon = "🟡"; color = "#facc15"; }
+  $("streak").textContent = icon + " " + streak + (streak === 1 ? " dag" : " dage");
+  $("streak").style.color = color;
+  const longest = Math.max(longestStreak(history), streak);
+  $("record").textContent = "Rekord: " + longest + (longest === 1 ? " dag" : " dage");
 
-  // Final Boss
+  // Final Boss + næste milepæl
   const left = current - goal;
-  $("boss").innerHTML = left > 0
-    ? "Nuværende vægt: " + fmt(current) + " kg<br>Tilbage til " + fmt(goal).replace(",0", "") + " kg: <b>" + fmt(left) + " kg</b>"
-    : "👑 Bossen er besejret! Du nåede målet.";
+  if (left > 0) {
+    $("boss").innerHTML = "<span class='big'>" + fmt(current) + " kg</span><br>" + fmt(left) + " kg tilbage";
+    const idx = MILESTONES.findIndex(g => g >= goal && current > g);
+    const next = idx === -1 ? goal : MILESTONES[idx];
+    const prev = idx > 0 ? Math.min(start, MILESTONES[idx - 1]) : start;
+    const span = prev - next;
+    const p = span > 0 ? Math.min(100, Math.max(0, (prev - current) / span * 100)) : 0;
+    $("nextGoal").textContent = "Næste mål: " + fmtGoal(next) + " kg";
+    $("nextBar").style.width = p + "%";
+    $("nextText").textContent = Math.round(p) + "% mod næste milepæl";
+    $("nextBlock").style.display = "block";
+  } else {
+    $("boss").textContent = "👑 Bossen er besejret! Du nåede målet.";
+    $("nextBlock").style.display = "none";
+  }
 
-  // Milepæle
+  // Milepæle (✅ nået, ⬜ ikke nået endnu)
   $("milestones").innerHTML = MILESTONES
     .map(g => (current <= g ? "✅ " : "⬜ ") + g + " kg")
     .join("<br>");
+
+  drawChart(history, goal);
+  drawWeekly(history);
 
   // Historik (nyeste først)
   const list = $("historyList");
