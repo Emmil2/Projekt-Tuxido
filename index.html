@@ -43,6 +43,9 @@
   .stat{background:#111827;border-radius:10px;padding:10px}
   .stat b{display:block;font-size:20px}
   svg{width:100%;height:auto;display:block}
+  button.secondary{background:#374151;font-weight:normal}
+  input[type=date]{width:100%;padding:10px;margin:8px 0;border-radius:10px;border:none;font-size:16px;background:#fff;color:#111827}
+  .bar.score-bar div{transition:width .3s,background .3s}
 </style>
 </head>
 <body>
@@ -65,18 +68,30 @@
 
 <div class="card">
   <h2 id="questTitle">🎯 Dagens Quest</h2>
+  <p id="questFocus" class="muted" style="margin:-6px 0 10px"></p>
+  <label for="dayDate" class="muted">Dato (gå tilbage for at rette eller udfylde en tidligere dag)</label>
+  <input id="dayDate" type="date">
+  <p id="dayNote" class="muted"></p>
   <div class="quest"><input type="checkbox" id="meal1"><label for="meal1">Måltid 1</label></div>
   <div class="quest"><input type="checkbox" id="meal2"><label for="meal2">Måltid 2</label></div>
   <div class="quest"><input type="checkbox" id="water"><label for="water">3L vand</label></div>
   <div class="quest"><input type="checkbox" id="steps"><label for="steps">20.000 skridt</label></div>
   <div class="quest"><input type="checkbox" id="training"><label for="training">Træning</label></div>
-  <input id="todayWeight" type="text" inputmode="decimal" placeholder="Dagens vægt (kg)">
+  <input id="todayWeight" type="text" inputmode="decimal" placeholder="Vægt (kg)">
   <button onclick="saveDay()">Gem dag</button>
+  <button id="delBtn" class="secondary" onclick="deleteDay()" style="display:none;margin-top:8px">Slet denne dag</button>
   <p id="dayMsg" class="msg"></p>
 
   <div class="score"><span>Dagens score</span><b id="scoreText">0 / 5</b></div>
   <div class="bar score-bar"><div id="scoreBar"></div></div>
   <span id="scorePct" class="muted"></span>
+</div>
+
+<div class="card" id="sundayCard" style="display:none;border:2px solid #f59e0b">
+  <h2>📅 Søndagsopsummering</h2>
+  <p id="sundayVerdict" class="big"></p>
+  <div id="sundayStats" class="grid" style="margin:12px 0"></div>
+  <p id="sundayProgress"></p>
 </div>
 
 <div class="card">
@@ -102,7 +117,7 @@
 </div>
 
 <div class="card">
-  <h2>👑 Final Boss</h2>
+  <h2 id="bossTitle">👑 Final Boss</h2>
   <p id="boss"></p>
   <div id="nextBlock">
     <p id="nextGoal" class="muted"></p>
@@ -137,8 +152,13 @@ const DEFAULTS = { start: 132.8, goal: 95 };
 const MILESTONES = [130, 125, 120, 115, 110, 105, 100, 95];
 const TASK_IDS = ["meal1", "meal2", "water", "steps", "training"];
 const QUEST_NAMES = {
-  1: "🎯 Momentum", 2: "🎯 Consistency", 3: "🎯 Active Recovery",
-  4: "🎯 Strength", 5: "🎯 No Excuses", 6: "🎯 Champion Day", 0: "🎯 Weekly Audit"
+  1: ["🎯 Momentum", "Træningsdag – start ugen stærkt."],
+  2: ["🎯 Consistency", "Træningsdag – det er de kedelige dage, der vinder."],
+  3: ["🎯 Active Recovery", "Hviledag – hold gang i kroppen, men gå let til den."],
+  4: ["🎯 Strength", "Træningsdag – træningen i dag skal være stærk."],
+  5: ["🎯 No Excuses", "Træningsdag – tag den i dag, ellers i morgen (lørdag)."],
+  6: ["🎯 Champion Day", ""],
+  0: ["🎯 Weekly Audit", "Hviledag – gør ugen op i søndagsopsummeringen."]
 };
 const $ = id => document.getElementById(id);
 
@@ -201,44 +221,118 @@ function saveSettings() {
   render();
 }
 
+function addDays(key, n) {
+  const d = keyToDate(key);
+  d.setDate(d.getDate() + n);
+  return dateKey(d);
+}
+function trainedOn(key, history) {
+  const h = history.find(x => x.key === key);
+  return !!(h && h.tasks[4]);
+}
+// Dagens opgaver afhænger af ugedagen: træning man, tir, tor og fre ELLER lør
+function questInfo(key, history) {
+  const wd = keyToDate(key).getDay();
+  const base = QUEST_NAMES[wd];
+  let focus = base[1], fifth;
+  if (wd === 1 || wd === 2 || wd === 4) fifth = "Træning";
+  else if (wd === 5) fifth = "Træning (ellers i morgen)";
+  else if (wd === 6) {
+    if (trainedOn(addDays(key, -1), history)) {
+      focus = "Du trænede fredag – i dag er hviledag.";
+      fifth = "Hviledag – restituer";
+    } else {
+      focus = "Du trænede ikke fredag – i dag er træningsdagen.";
+      fifth = "Træning (ikke taget fredag)";
+    }
+  } else fifth = "Hviledag – let aktivitet";
+  return { title: base[0], focus, labels: ["Måltid 1", "Måltid 2", "3L vand", "20.000 skridt", fifth] };
+}
+function selectedKey() { return $("dayDate").value || todayKey(); }
+
 function saveDay() {
+  const key = selectedKey();
+  if (key > todayKey()) { say("dayMsg", "Du kan ikke gemme en dag i fremtiden", true); return; }
   const weight = toNumber($("todayWeight").value);
   if (weight === null || weight <= 0) {
-    say("dayMsg", "Skriv dagens vægt som tal, fx 131,4", true);
+    say("dayMsg", "Skriv vægten som tal, fx 131,4", true);
     return;
   }
   const entry = {
-    key: todayKey(),
-    date: new Date().toLocaleDateString("da-DK"),
+    key,
+    date: keyToDate(key).toLocaleDateString("da-DK"),
     weight,
     tasks: TASK_IDS.map(id => $(id).checked)
   };
-  const history = load("history", []).filter(h => h.key !== entry.key);
+  const history = load("history", []).filter(h => h.key !== key);
   history.push(entry);
   history.sort((a, b) => a.key.localeCompare(b.key));
   const ok = store("history", history);
-  say("dayMsg", ok ? "Dag gemt ✔" : "Kunne ikke gemme permanent", !ok);
+  say("dayMsg", ok ? "Dag gemt ✔ (" + entry.date + ")" : "Kunne ikke gemme permanent", !ok);
+  $("delBtn").style.display = "block";
   render();
+  updateQuestUI();
+}
+
+function deleteDay() {
+  const key = selectedKey();
+  if (!confirm("Slet " + keyToDate(key).toLocaleDateString("da-DK") + "?")) return;
+  const history = load("history", []).filter(h => h.key !== key);
+  store("history", history);
+  loadDay(key);
+  say("dayMsg", "Dag slettet", false);
+  render();
+  updateQuestUI();
 }
 
 /* ---------- Formular ---------- */
+function loadDay(key) {
+  const h = load("history", []).find(x => x.key === key);
+  $("todayWeight").value = h ? String(h.weight).replace(".", ",") : "";
+  TASK_IDS.forEach((id, i) => $(id).checked = h ? !!h.tasks[i] : false);
+  $("delBtn").style.display = h ? "block" : "none";
+  updateScore();
+}
+
+function updateQuestUI() {
+  const key = selectedKey();
+  const info = questInfo(key, load("history", []));
+  $("questTitle").textContent = info.title;
+  $("questFocus").textContent = info.focus;
+  document.querySelectorAll(".quest label").forEach((l, i) => l.textContent = info.labels[i]);
+  $("dayNote").textContent = key === todayKey()
+    ? ""
+    : "Du redigerer " + keyToDate(key).toLocaleDateString("da-DK", { weekday: "long", day: "numeric", month: "long" }) + ".";
+}
+
+function selectDay() {
+  if ($("dayDate").value === "" || $("dayDate").value > todayKey()) $("dayDate").value = todayKey();
+  say("dayMsg", "", false);
+  loadDay(selectedKey());
+  updateQuestUI();
+}
+$("dayDate").addEventListener("change", selectDay);
+
 function restoreForm() {
   const s = load("settings", DEFAULTS);                 // autofyld med standardværdier
   $("startWeight").value = String(s.start).replace(".", ",");
   $("goalWeight").value = String(s.goal).replace(".", ",");
-  const today = load("history", []).find(h => h.key === todayKey());
-  if (today) {
-    $("todayWeight").value = String(today.weight).replace(".", ",");
-    TASK_IDS.forEach((id, i) => $(id).checked = today.tasks[i]);
-  }
-  updateScore();
+  $("dayDate").value = todayKey();
+  $("dayDate").max = todayKey();
+  selectDay();
 }
 
+// Farve: rød ved 0 → gul ved 3 → grøn ved 4-5
+function scoreColor(n) {
+  const hues = [0, 16, 32, 48, 142, 142];
+  return "hsl(" + hues[n] + " 80% 48%)";
+}
 function updateScore() {
   const n = TASK_IDS.filter(id => $(id).checked).length;
   const pct = Math.round(n / TASK_IDS.length * 100);
   $("scoreText").textContent = n + " / " + TASK_IDS.length;
-  $("scoreBar").style.width = pct + "%";
+  $("scoreBar").style.width = (n === 0 ? 6 : pct) + "%";
+  $("scoreBar").style.background = scoreColor(n);
   $("scorePct").textContent = pct + "%" + (n === TASK_IDS.length ? " – perfekt dag 🎉" : "");
 }
 TASK_IDS.forEach(id => $(id).addEventListener("change", updateScore));
@@ -322,6 +416,62 @@ function drawWeekly(history) {
     stat("Vægtændring", change);
 }
 
+/* ---------- Søndagsopsummering ---------- */
+function daysLeft() {
+  const n = new Date();
+  return Math.round((TUX_DATE - new Date(n.getFullYear(), n.getMonth(), n.getDate())) / 86400000);
+}
+function drawSunday(history, settings, current) {
+  const card = $("sundayCard");
+  if (new Date().getDay() !== 0) { card.style.display = "none"; return; }
+  card.style.display = "block";
+
+  const today = todayKey();
+  const week = history.filter(h => { const d = dayDiff(h.key, today); return d >= 0 && d <= 6; });
+  const before = history.filter(h => dayDiff(h.key, today) > 6);
+  const weekStartWeight = before.length ? before[before.length - 1].weight : settings.start;
+  const perfect = week.filter(isPerfect).length;
+  const quests = week.reduce((sum, h) => sum + h.tasks.filter(Boolean).length, 0);
+
+  let verdict;
+  if (!week.length) verdict = "🌱 Ingen dage gemt denne uge";
+  else if (perfect >= 6) verdict = "🏆 Fantastisk uge";
+  else if (perfect >= 4) verdict = "💪 Stærk uge";
+  else if (perfect >= 2) verdict = "👍 God uge – byg videre";
+  else verdict = "🌱 Ny uge, nyt forsøg";
+  $("sundayVerdict").textContent = verdict;
+
+  let change = "–";
+  if (week.length) {
+    const c = week[week.length - 1].weight - weekStartWeight;
+    change = (c > 0 ? "+" : "") + fmt(c) + " kg";
+  }
+  const stat = (label, value) => '<div class="stat"><b>' + value + '</b><span class="muted">' + label + '</span></div>';
+  $("sundayStats").innerHTML =
+    stat("Dage gemt", week.length + " / 7") +
+    stat("Perfekte dage", perfect + " / 7") +
+    stat("Gns. quests pr. dag", week.length ? (quests / week.length).toFixed(1).replace(".", ",") + " / 5" : "–") +
+    stat("Vægtændring i ugen", change);
+
+  const lost = settings.start - current;
+  const left = current - settings.goal;
+  const total = settings.start - settings.goal;
+  const pct = total > 0 ? Math.min(100, Math.max(0, lost / total * 100)) : 0;
+  const days = daysLeft();
+  let text = "Samlet: " + fmt(lost) + " kg tabt (" + pct.toFixed(1).replace(".", ",") + "% af vejen). ";
+  if (left > 0) {
+    text += fmt(left) + " kg tilbage til " + fmtGoal(settings.goal) + " kg. ";
+    if (days > 0) {
+      text += "Der er " + days + " dage til 1. april – det svarer til ca. " + fmt(left / (days / 7)) + " kg pr. uge.";
+    } else {
+      text += "Datoen er passeret.";
+    }
+  } else {
+    text += "👑 Målet er nået!";
+  }
+  $("sundayProgress").textContent = text;
+}
+
 /* ---------- Render ---------- */
 function render() {
   const settings = load("settings", DEFAULTS);
@@ -329,8 +479,7 @@ function render() {
   const start = settings.start, goal = settings.goal;
   const current = history.length ? history[history.length - 1].weight : start;
 
-  $("questTitle").textContent = QUEST_NAMES[new Date().getDay()];
-
+  
   // Countdown
   const now = new Date();
   const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -363,6 +512,7 @@ function render() {
   $("record").textContent = "Rekord: " + longest + (longest === 1 ? " dag" : " dage");
 
   // Final Boss + næste milepæl
+  $("bossTitle").textContent = "👑 Final Boss – " + fmtGoal(goal) + " kg";
   const left = current - goal;
   if (left > 0) {
     $("boss").innerHTML = "<span class='big'>" + fmt(current) + " kg</span><br>" + fmt(left) + " kg tilbage";
@@ -387,6 +537,7 @@ function render() {
 
   drawChart(history, goal);
   drawWeekly(history);
+  drawSunday(history, settings, current);
 
   // Historik (nyeste først)
   const list = $("historyList");
