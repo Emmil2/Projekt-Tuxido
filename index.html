@@ -12,7 +12,7 @@
   .card{background:#1f2937;padding:16px;border-radius:15px;margin-bottom:15px}
   button{width:100%;padding:12px;border:none;border-radius:10px;background:#3b82f6;color:#fff;font-weight:bold;font-size:16px;cursor:pointer}
   button:active{background:#2563eb}
-  input[type=text],input[type=number]{width:100%;padding:10px;margin:8px 0;border-radius:10px;border:none;font-size:16px}
+  input[type=text]{width:100%;padding:10px;margin:8px 0;border-radius:10px;border:none;font-size:16px}
   .quest{margin:10px 0;display:flex;align-items:center;gap:10px}
   .quest input{width:20px;height:20px}
   .msg{margin:10px 0 0;font-size:14px;color:#86efac;min-height:1.2em}
@@ -20,8 +20,9 @@
   .warn{background:#7f1d1d;padding:10px;border-radius:10px;margin-bottom:15px;display:none}
   .hist{padding:8px 0;border-bottom:1px solid #374151}
   .hist:last-child{border-bottom:none}
-  .bar{height:10px;background:#374151;border-radius:5px;overflow:hidden;margin-top:10px}
-  .bar div{height:100%;background:#3b82f6;width:0}
+  .bar{height:25px;background:#374151;border-radius:10px;overflow:hidden}
+  .bar div{height:100%;width:0;background:#22c55e;transition:width .4s}
+  .big{font-size:28px;font-weight:bold;margin:0}
 </style>
 </head>
 <body>
@@ -42,7 +43,7 @@
 </div>
 
 <div class="card">
-  <h2>Dagens Quest</h2>
+  <h2 id="questTitle">🎯 Dagens Quest</h2>
   <div class="quest"><input type="checkbox" id="meal1"><label for="meal1">Måltid 1</label></div>
   <div class="quest"><input type="checkbox" id="meal2"><label for="meal2">Måltid 2</label></div>
   <div class="quest"><input type="checkbox" id="water"><label for="water">3L vand</label></div>
@@ -55,18 +56,28 @@
 
 <div class="card">
   <h2>⏳ Tuxedo Countdown</h2>
-  <p id="countdown"></p>
+  <p id="countdown" class="big"></p>
 </div>
 
 <div class="card">
   <h2>Status</h2>
   <p id="status"></p>
-  <div class="bar"><div id="progress"></div></div>
 </div>
 
 <div class="card">
-  <h2>📖 Historik</h2>
-  <div id="historyList"></div>
+  <h2 id="progressTitle">📊 Progress</h2>
+  <div class="bar"><div id="progressBar"></div></div>
+  <p id="progressText"></p>
+</div>
+
+<div class="card">
+  <h2>🔥 Streak</h2>
+  <p id="streak" class="big"></p>
+</div>
+
+<div class="card">
+  <h2>👑 Final Boss</h2>
+  <p id="boss"></p>
 </div>
 
 <div class="card">
@@ -74,12 +85,22 @@
   <div id="milestones"></div>
 </div>
 
+<div class="card">
+  <h2>📖 Historik</h2>
+  <div id="historyList"></div>
+</div>
+
 <script>
-const TUX_DATE = new Date(2027, 3, 1);           // 1. april 2027 (måned 3 = april)
+const TUX_DATE = new Date(2027, 3, 1);           // 1. april 2027
 const MILESTONES = [130, 125, 120, 115, 110, 105, 100, 95];
+const TASK_IDS = ["meal1", "meal2", "water", "steps", "training"];
+const QUEST_NAMES = {
+  1: "🎯 Momentum", 2: "🎯 Consistency", 3: "🎯 Active Recovery",
+  4: "🎯 Strength", 5: "🎯 No Excuses", 6: "🎯 Champion Day", 0: "🎯 Weekly Audit"
+};
 const $ = id => document.getElementById(id);
 
-/* ---------- Sikker lagring (virker også hvis localStorage er blokeret) ---------- */
+/* ---------- Sikker lagring ---------- */
 const memory = {};
 let canStore = true;
 try {
@@ -106,20 +127,18 @@ function load(key, fallback) {
 }
 
 /* ---------- Hjælpere ---------- */
-// Accepterer både 132,7 og 132.7
-function toNumber(text) {
+function toNumber(text) {                       // accepterer 132,7 og 132.7
   const n = parseFloat(String(text).trim().replace(",", "."));
   return isFinite(n) ? n : null;
 }
 function fmt(n) { return n.toFixed(1).replace(".", ","); }
-function todayKey() {
-  const d = new Date();
+function dateKey(d) {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
+function todayKey() { return dateKey(new Date()); }
 function say(id, text, isError) {
-  const el = $(id);
-  el.textContent = text;
-  el.className = "msg" + (isError ? " err" : "");
+  $(id).textContent = text;
+  $(id).className = "msg" + (isError ? " err" : "");
 }
 
 /* ---------- Gem ---------- */
@@ -145,9 +164,8 @@ function saveDay() {
     key: todayKey(),
     date: new Date().toLocaleDateString("da-DK"),
     weight,
-    tasks: ["meal1", "meal2", "water", "steps", "training"].map(id => $(id).checked)
+    tasks: TASK_IDS.map(id => $(id).checked)
   };
-  // Kun én post pr. dag – gem igen overskriver i dag
   const history = load("history", []).filter(h => h.key !== entry.key);
   history.push(entry);
   history.sort((a, b) => a.key.localeCompare(b.key));
@@ -166,8 +184,26 @@ function restoreForm() {
   const today = load("history", []).find(h => h.key === todayKey());
   if (today) {
     $("todayWeight").value = String(today.weight).replace(".", ",");
-    ["meal1", "meal2", "water", "steps", "training"].forEach((id, i) => $(id).checked = today.tasks[i]);
+    TASK_IDS.forEach((id, i) => $(id).checked = today.tasks[i]);
   }
+}
+
+// Antal dage i træk med 5/5 quests. Hvis i dag ikke er færdig endnu, tælles fra i går.
+function calcStreak(history) {
+  const byKey = {};
+  history.forEach(h => byKey[h.key] = h);
+  const done = d => {
+    const h = byKey[dateKey(d)];
+    return h && h.tasks.filter(Boolean).length >= 5;
+  };
+  const d = new Date();
+  if (!done(d)) d.setDate(d.getDate() - 1);
+  let streak = 0;
+  while (done(d)) {
+    streak++;
+    d.setDate(d.getDate() - 1);
+  }
+  return streak;
 }
 
 function render() {
@@ -175,6 +211,9 @@ function render() {
   const history = load("history", []);
   const start = settings.start, goal = settings.goal;
   const current = history.length ? history[history.length - 1].weight : start;
+
+  // Dagens quest-navn
+  $("questTitle").textContent = QUEST_NAMES[new Date().getDay()];
 
   // Countdown
   const now = new Date();
@@ -188,9 +227,28 @@ function render() {
     "Nuværende vægt: " + fmt(current) + " kg<br>" +
     "Tabt: " + fmt(start - current) + " kg<br>" +
     "Tilbage til mål: " + fmt(Math.max(0, current - goal)) + " kg";
+
+  // Progress
   const total = start - goal;
   const pct = total > 0 ? Math.min(100, Math.max(0, (start - current) / total * 100)) : 0;
-  $("progress").style.width = pct + "%";
+  $("progressTitle").textContent = "📊 Progress mod " + fmt(goal).replace(",0", "") + " kg";
+  $("progressBar").style.width = pct + "%";
+  $("progressText").textContent = pct.toFixed(1).replace(".", ",") + "% gennemført";
+
+  // Streak
+  const streak = calcStreak(history);
+  $("streak").textContent = streak + (streak === 1 ? " dag" : " dage");
+
+  // Final Boss
+  const left = current - goal;
+  $("boss").innerHTML = left > 0
+    ? "Nuværende vægt: " + fmt(current) + " kg<br>Tilbage til " + fmt(goal).replace(",0", "") + " kg: <b>" + fmt(left) + " kg</b>"
+    : "👑 Bossen er besejret! Du nåede målet.";
+
+  // Milepæle
+  $("milestones").innerHTML = MILESTONES
+    .map(g => (current <= g ? "✅ " : "⬜ ") + g + " kg")
+    .join("<br>");
 
   // Historik (nyeste først)
   const list = $("historyList");
@@ -202,11 +260,6 @@ function render() {
     div.textContent = h.date + " – " + fmt(h.weight) + " kg – " + h.tasks.filter(Boolean).length + "/5 quests";
     list.appendChild(div);
   });
-
-  // Milepæle
-  $("milestones").innerHTML = MILESTONES
-    .map(g => (current <= g ? "✅ " : "⬜ ") + g + " kg")
-    .join("<br>");
 }
 
 restoreForm();
