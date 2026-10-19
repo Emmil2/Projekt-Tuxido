@@ -43,6 +43,7 @@
   .stat{background:#111827;border-radius:10px;padding:10px}
   .stat b{display:block;font-size:20px}
   svg{width:100%;height:auto;display:block}
+  #setupCard label{display:block;margin-top:8px}
   button.secondary{background:#374151;font-weight:normal}
   input[type=date]{width:100%;padding:10px;margin:8px 0;border-radius:10px;border:none;font-size:16px;background:#fff;color:#111827}
   .bar.score-bar div{transition:width .3s,background .3s}
@@ -58,13 +59,22 @@
   Åbn siden i en almindelig browser-fane, ellers forsvinder alt ved genindlæsning.
 </div>
 
-<div class="card">
-  <h2>Opsætning</h2>
-  <input id="startWeight" type="text" inputmode="decimal" placeholder="Startvægt (kg)">
-  <input id="goalWeight" type="text" inputmode="decimal" placeholder="Målvægt (kg)">
-  <button onclick="saveSettings()">Gem opsætning</button>
+<div class="card" id="setupCard">
+  <h2 id="setupTitle">Indstillinger</h2>
+  <p id="setupIntro" class="muted" style="display:none">Fortæl, hvor du starter, hvor du vil hen, og hvornår du vil være der. Dine tal gemmes kun på din egen enhed.</p>
+  <label class="muted" for="startWeight">Startvægt (kg)</label>
+  <input id="startWeight" type="text" inputmode="decimal" placeholder="fx 98,5">
+  <label class="muted" for="goalWeight">Målvægt (kg)</label>
+  <input id="goalWeight" type="text" inputmode="decimal" placeholder="fx 85">
+  <label class="muted" for="endDate">Slutdato</label>
+  <input id="endDate" type="date">
+  <label class="muted" for="eventName">Hvad går du efter? (valgfrit)</label>
+  <input id="eventName" type="text" maxlength="30" placeholder="fx Bryllup, Sommerferie, Tuxedo">
+  <button id="setupBtn" onclick="saveSettings()">Gem indstillinger</button>
   <p id="settingsMsg" class="msg"></p>
 </div>
+
+<div id="app" style="display:none">
 
 <div class="card">
   <h2 id="questTitle">🎯 Dagens Quest</h2>
@@ -95,7 +105,7 @@
 </div>
 
 <div class="card">
-  <h2>⏳ Tuxedo Countdown</h2>
+  <h2 id="countdownTitle">⏳ Countdown</h2>
   <p id="countdown" class="big"></p>
 </div>
 
@@ -146,10 +156,9 @@
   <div id="historyList"></div>
 </div>
 
+</div>
+
 <script>
-const TUX_DATE = new Date(2027, 3, 1);           // 1. april 2027
-const DEFAULTS = { start: 132.8, goal: 95 };
-const MILESTONES = [130, 125, 120, 115, 110, 105, 100, 95];
 const TASK_IDS = ["meal1", "meal2", "water", "steps", "training"];
 const QUEST_NAMES = {
   1: ["🎯 Momentum", "Træningsdag – start ugen stærkt."],
@@ -206,19 +215,55 @@ function say(id, text, isError) {
   $(id).textContent = text;
   $(id).className = "msg" + (isError ? " err" : "");
 }
+// Hent indstillinger. Ældre brugere uden gemte indstillinger får de gamle standardværdier.
+function getSettings() {
+  const s = load("settings", null);
+  if (!s && load("history", []).length === 0) return null;      // ny bruger → velkomstskærm
+  const base = s || { start: 132.8, goal: 95 };
+  return {
+    start: base.start,
+    goal: base.goal,
+    end: base.end || "2027-04-01",
+    name: base.name !== undefined ? base.name : "Tuxedo"
+  };
+}
+// Milepæle for hver 5. kg mellem start og mål, og til sidst selve målet
+function milestonesFor(start, goal) {
+  const list = [];
+  for (let g = Math.floor(start / 5) * 5; g > goal; g -= 5) {
+    if (g < start) list.push(g);
+  }
+  list.push(goal);
+  return list;
+}
+function endLabel(k) {
+  return keyToDate(k).toLocaleDateString("da-DK", { day: "numeric", month: "long", year: "numeric" });
+}
 function isPerfect(h) { return h.tasks.filter(Boolean).length >= 5; }
 
 /* ---------- Gem ---------- */
 function saveSettings() {
   const start = toNumber($("startWeight").value);
   const goal = toNumber($("goalWeight").value);
+  const end = $("endDate").value;
+  const name = $("eventName").value.trim();
   if (start === null || goal === null || start <= 0 || goal <= 0) {
-    say("settingsMsg", "Skriv både start- og målvægt som tal, fx 132,8", true);
+    say("settingsMsg", "Skriv både start- og målvægt som tal, fx 98,5", true);
     return;
   }
-  const ok = store("settings", { start, goal });
-  say("settingsMsg", ok ? "Opsætning gemt ✔" : "Kunne ikke gemme permanent", !ok);
+  if (goal >= start) {
+    say("settingsMsg", "Målvægten skal være lavere end startvægten", true);
+    return;
+  }
+  if (!end || end <= todayKey()) {
+    say("settingsMsg", "Vælg en slutdato frem i tiden", true);
+    return;
+  }
+  const ok = store("settings", { start, goal, end, name });
+  say("settingsMsg", ok ? "Gemt ✔" : "Kunne ikke gemme permanent", !ok);
+  applyMode();
   render();
+  updateQuestUI();
 }
 
 function addDays(key, n) {
@@ -313,10 +358,24 @@ function selectDay() {
 }
 $("dayDate").addEventListener("change", selectDay);
 
+// Ny bruger ser kun velkomst/indstillinger; resten vises, når indstillinger er gemt
+function applyMode() {
+  const started = !!getSettings();
+  $("app").style.display = started ? "block" : "none";
+  $("setupTitle").textContent = started ? "Indstillinger" : "👋 Velkommen til Project Tuxedo";
+  $("setupIntro").style.display = started ? "none" : "block";
+  $("setupBtn").textContent = started ? "Gem indstillinger" : "Start";
+}
+
 function restoreForm() {
-  const s = load("settings", DEFAULTS);                 // autofyld med standardværdier
-  $("startWeight").value = String(s.start).replace(".", ",");
-  $("goalWeight").value = String(s.goal).replace(".", ",");
+  const s = getSettings();
+  if (s) {
+    $("startWeight").value = String(s.start).replace(".", ",");
+    $("goalWeight").value = String(s.goal).replace(".", ",");
+    $("endDate").value = s.end;
+    $("eventName").value = s.name;
+  }
+  $("endDate").min = addDays(todayKey(), 1);
   $("dayDate").value = todayKey();
   $("dayDate").max = todayKey();
   selectDay();
@@ -417,9 +476,9 @@ function drawWeekly(history) {
 }
 
 /* ---------- Søndagsopsummering ---------- */
-function daysLeft() {
+function daysLeft(end) {
   const n = new Date();
-  return Math.round((TUX_DATE - new Date(n.getFullYear(), n.getMonth(), n.getDate())) / 86400000);
+  return Math.round((keyToDate(end) - new Date(n.getFullYear(), n.getMonth(), n.getDate())) / 86400000);
 }
 function drawSunday(history, settings, current) {
   const card = $("sundayCard");
@@ -457,12 +516,12 @@ function drawSunday(history, settings, current) {
   const left = current - settings.goal;
   const total = settings.start - settings.goal;
   const pct = total > 0 ? Math.min(100, Math.max(0, lost / total * 100)) : 0;
-  const days = daysLeft();
+  const days = daysLeft(settings.end);
   let text = "Samlet: " + fmt(lost) + " kg tabt (" + pct.toFixed(1).replace(".", ",") + "% af vejen). ";
   if (left > 0) {
     text += fmt(left) + " kg tilbage til " + fmtGoal(settings.goal) + " kg. ";
     if (days > 0) {
-      text += "Der er " + days + " dage til 1. april – det svarer til ca. " + fmt(left / (days / 7)) + " kg pr. uge.";
+      text += "Der er " + days + " dage til " + endLabel(settings.end) + " – det svarer til ca. " + fmt(left / (days / 7)) + " kg pr. uge.";
     } else {
       text += "Datoen er passeret.";
     }
@@ -474,16 +533,19 @@ function drawSunday(history, settings, current) {
 
 /* ---------- Render ---------- */
 function render() {
-  const settings = load("settings", DEFAULTS);
+  const settings = getSettings();
+  if (!settings) return;
   const history = load("history", []);
   const start = settings.start, goal = settings.goal;
+  const MILESTONES = milestonesFor(start, goal);
   const current = history.length ? history[history.length - 1].weight : start;
 
   
   // Countdown
   const now = new Date();
   const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const days = Math.round((TUX_DATE - midnight) / 86400000);
+  const days = Math.round((keyToDate(settings.end) - midnight) / 86400000);
+  $("countdownTitle").textContent = "⏳ Countdown" + (settings.name ? " – " + settings.name : "");
   $("countdown").textContent = days > 0 ? days + " dage tilbage" : days === 0 ? "Det er i dag! 🎉" : "Datoen er passeret";
 
   // Status
@@ -552,6 +614,7 @@ function render() {
 }
 
 restoreForm();
+applyMode();
 render();
 
 // Service worker (gør appen installerbar og brugbar offline)

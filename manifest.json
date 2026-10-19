@@ -1,7 +1,7 @@
 {
   "name": "Project Tuxedo",
   "short_name": "Tuxedo",
-  "description": "Daglig tracker mod 1. april 2027",
+  "description": "Daglig tracker mod dit mål",
   "lang": "da",
   "start_url": "./index.html",
   "scope": "./",
